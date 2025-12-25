@@ -2,7 +2,7 @@ import rasterio
 import numpy as np
 import matplotlib.pyplot as plt
 import contextily as cx
-from scipy.ndimage import minimum_filter
+from scipy.ndimage import minimum_filter, binary_dilation
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 
 # --- CONFIGURATION ---
@@ -57,25 +57,35 @@ def generate_evidence():
 
         hill_height = dem_data - base_level
 
-        print("3. identifying the Destroyed Hills...")
+        print("3. Applying the '500m Cluster Rule'...")
 
-        mask_ecological = (hill_height >= ECOLOGICAL_THRESHOLD)
-        mask_govt = (hill_height >= GOVT_THRESHOLD)
-        mask_destroyed = np.logical_and(mask_ecological, ~mask_govt)
+        mask_govt_peaks = hill_height >= GOVT_THRESHOLD
+
+        buffer_pixels = int(round(500 / pixel_size))
+        buffer_pixels = max(1, buffer_pixels)
+        y, x = np.ogrid[-buffer_pixels:buffer_pixels + 1, -buffer_pixels:buffer_pixels + 1]
+        mask_structure = (x ** 2 + y ** 2) <= buffer_pixels ** 2
+
+        mask_protected_zone = binary_dilation(mask_govt_peaks, structure=mask_structure)
+
+        mask_ecological = hill_height >= ECOLOGICAL_THRESHOLD
+
+        mask_destroyed = np.logical_and(mask_ecological, ~mask_protected_zone)
 
         total_hill_pixels = int(np.sum(mask_ecological))
         destroyed_pixels = int(np.sum(mask_destroyed))
+        protected_pixels = int(np.sum(np.logical_and(mask_ecological, mask_protected_zone)))
 
         percent_lost = 0.0
         if total_hill_pixels > 0:
             percent_lost = (destroyed_pixels / total_hill_pixels) * 100
 
         print("\n" + "=" * 40)
-        print("RESULTS FOR ACTIVIST REPORT:")
-        print(f"Total 'Scientific' Hills found: {total_hill_pixels:,} pixels")
-        print(f"Hills PROTECTED by Govt Rule:   {int(np.sum(mask_govt)):,} pixels")
-        print(f"Hills DESTROYED by Govt Rule:   {destroyed_pixels:,} pixels")
-        print(f"PERCENTAGE LOSS:                {percent_lost:.2f}%")
+        print("RESULTS (WITH 500m BUFFER APPLIED):")
+        print(f"Total Ecological Hills:       {total_hill_pixels:,} pixels")
+        print(f"Protected (Peaks + Buffer):   {protected_pixels:,} pixels")
+        print(f"TRUE DESTROYED AREA:          {destroyed_pixels:,} pixels")
+        print(f"TRUE PERCENTAGE LOSS:         {percent_lost:.2f}%")
         print("=" * 40 + "\n")
 
         return mask_destroyed, transform, dst_crs
