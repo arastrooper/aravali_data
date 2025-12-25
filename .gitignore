@@ -3,7 +3,6 @@ venv/
 *.pyc
 __pycache__/
 *.log
-aravalli_dem.hgt
 .DS_Store
 *.tmp
 *.sqlite3
